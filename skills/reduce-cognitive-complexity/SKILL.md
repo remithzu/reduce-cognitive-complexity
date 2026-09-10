@@ -1,111 +1,978 @@
 ---
 name: reduce-cognitive-complexity
-description: Refactor code to lower Cognitive Complexity — flatten nesting, extract guard clauses, split long functions, name complex conditions — without changing behavior
+description: Analyze and refactor code to reduce Cognitive Complexity according to the SonarSource model while preserving behavior, improving human understandability, and verifying that complexity is actually reduced rather than merely relocated
+priority: high
+scope:
+  - Cognitive Complexity
+  - SonarQube
+  - SonarLint
+  - detekt complexity findings
+  - Kotlin
+  - Java
+  - control-flow refactoring
+  - readability refactoring
 license: MIT
 compatibility: universal
 metadata:
   author: remithzu <remithzu@hotmail.com>
-  version: "1.1.0"
+  version: "2.3.0"
   workflow: coding-and-refactoring
+  source_model: "SonarSource Cognitive Complexity v1.7, 29 August 2023"
 ---
 
 # Reduce Cognitive Complexity
 
 ## Purpose
 
-Write and refactor code that is easy to understand, maintain, and review by proactively controlling Cognitive Complexity.
+This skill exists to prevent and reduce Cognitive Complexity while preserving behavior and improving human understandability.
 
-This skill applies to both:
+It is a **contract-driven refactoring skill**.
 
-- **New code** — prevent unnecessary complexity before it is introduced.
-- **Existing code** — reduce complexity when modifying, refactoring, or fixing code.
+The agent must not treat Cognitive Complexity as a number to manipulate. The metric is a signal that a function may require more mental effort to understand.
 
-The goal is not to achieve the lowest possible complexity score.
+The objective is:
 
-The goal is:
+> Reduce unnecessary mental effort by improving control flow, nesting, responsibility boundaries, and domain clarity without introducing artificial indirection or changing behavior.
 
-> **Make the code easier for a human to understand while avoiding unnecessary SonarQube and detekt complexity warnings.**
-
-Do not optimize for the metric at the expense of readability.
+This skill is based on the SonarSource *Cognitive Complexity: A new way of measuring understandability*, Version 1.7, 29 August 2023.
 
 ---
 
-## When to use me
+# Skill Contract
 
-Use this skill whenever the user asks to:
+This section is the operational contract of this skill.
 
-- Create a new class.
-- Create a new function or method.
-- Implement a new feature.
-- Add logic to an existing class.
-- Modify existing code.
-- Refactor code.
-- Fix SonarQube complexity warnings.
-- Fix detekt complexity warnings.
-- Fix `CognitiveComplexMethod`.
-- Fix `NestedBlockDepth`.
-- Fix `ComplexCondition`.
-- Fix equivalent complexity or readability problems.
-- Simplify deeply nested logic.
-- Split a large function or class.
-- Improve code maintainability.
+The sections below define:
 
-This skill should be applied **proactively** when writing new code.
+- when the skill must be used,
+- when it must not be used,
+- what the agent must do,
+- what the agent must produce,
+- how the result must be verified,
+- and when the agent must stop instead of forcing a refactor.
 
-Do not wait for SonarQube or detekt to report a problem.
+The agent must follow this contract before applying the detailed guidance.
 
 ---
 
-# Core Principles
+## Trigger
 
-## 1. Prevent complexity before fixing it
+Use this skill when **any** of the following is true:
 
-When creating new code, consider Cognitive Complexity during design and implementation.
+### Explicit complexity problem
 
-Do not first write highly nested code and then attempt to reduce its complexity.
+- SonarQube reports `Cognitive Complexity of functions should not be too high`.
+- SonarLint reports a Cognitive Complexity issue.
+- detekt reports `CognitiveComplexMethod`.
+- detekt reports `NestedBlockDepth`.
+- detekt reports `ComplexCondition`.
+- Another static analyzer reports excessive control-flow complexity.
 
-Prefer a structure that is naturally:
+### Explicit refactoring request
 
-- Flat.
-- Focused.
-- Explicit.
-- Easy to scan.
-- Easy to test.
-- Easy to modify.
+Use when the user asks to:
+
+- reduce Cognitive Complexity,
+- reduce nesting,
+- simplify a complex function,
+- refactor a large function,
+- make control flow easier to understand,
+- improve readability of complex logic,
+- split a function because it is difficult to understand.
+
+### Preventive use
+
+Use when writing new code if the implementation would otherwise create:
+
+- unnecessary deep nesting,
+- substantial control flow inside lambdas/callbacks,
+- multiple unrelated responsibilities,
+- complex boolean decision trees,
+- nested loops with significant internal branching,
+- deeply nested exception handling,
+- difficult state/type dispatch.
+
+Prevent complexity rather than deliberately introducing it and fixing it later.
+
+---
+
+## Do Not Use When
+
+Do not activate this skill solely because:
+
+- a function is long but its control flow is simple,
+- a class has many methods,
+- there are many lines of declarative code,
+- a function contains many method calls,
+- code could theoretically be shorter,
+- a user asks for formatting only,
+- a user asks for a behavior change unrelated to complexity,
+- a metric is low and there is no meaningful readability problem.
+
+Do not refactor code merely to make a numeric metric smaller.
+
+Do not assume that every `if`, `when`, lambda, or boolean expression must be extracted.
+
+Do not use this skill as justification for an architectural rewrite.
+
+---
+
+# Required Actions
+
+When the skill is triggered for an existing function, the agent MUST perform these actions in order.
+
+## 1. Identify the target
+
+Determine:
+
+- file,
+- function/method,
+- rule,
+- analyzer,
+- reported location,
+- current complexity score if available,
+- configured threshold if available.
+
+If the analyzer provides a precise finding, use it.
+
+Do not invent a score or threshold.
+
+---
+
+## 2. Read the complete target function
+
+Do not refactor only the highlighted line.
+
+Read enough surrounding code to understand:
+
+- parameters,
+- return value,
+- state,
+- side effects,
+- exception behavior,
+- asynchronous boundaries,
+- callbacks,
+- ordering,
+- external calls,
+- data transformations,
+- persistence,
+- user-visible effects.
+
+A warning at line N may be caused by nesting established much earlier.
+
+---
+
+## 3. Map the control flow
+
+Identify every relevant flow-breaking construct.
+
+At minimum inspect for:
+
+```text
+if
+else if
+else
+ternary
+when / switch
+for / foreach
+while / do while
+catch
+binary logical-operator sequences
+recursion
+labeled or multi-level jumps
+nested methods
+lambdas
+callbacks
+scope-function blocks
+async/coroutine blocks
+```
+
+Create a mental or written nesting tree when the function is non-trivial.
 
 Example:
 
-```kotlin
-fun processPayment(request: PaymentRequest) {
-    if (!request.isValid) return
-    if (!isSupported(request.type)) return
-    if (!hasEnoughBalance(request)) return
+```text
+sync()
+└── when
+    └── if
+        └── launch
+            └── try
+                ├── if
+                └── catch
+```
 
-    executePayment(request)
+---
+
+## 4. Find the deepest complexity path
+
+Do not focus only on the number of branches.
+
+Find the path that requires the reader to retain the most surrounding context.
+
+Examples:
+
+```text
+when → if → lambda → try → if
+```
+
+```text
+loop → if → loop → if → catch
+```
+
+```text
+callback → when → if → if
+```
+
+Prioritize unnecessary nesting on these paths.
+
+---
+
+## 5. Identify responsibility boundaries
+
+Determine what the function is actually doing.
+
+Typical responsibilities include:
+
+```text
+validation
+decision
+state preparation
+data loading
+transformation
+persistence
+success handling
+failure handling
+cleanup
+navigation
+async execution
+UI state update
+domain calculation
+```
+
+Ask:
+
+> Can this group of operations be described by one meaningful responsibility and name?
+
+If yes, it is a candidate for extraction.
+
+---
+
+## 6. Select the smallest structural intervention
+
+Choose the least invasive strategy that genuinely improves understandability.
+
+Preferred order:
+
+1. Flatten unnecessary nesting.
+2. Add appropriate guard clauses.
+3. Name meaningful domain conditions.
+4. Separate unrelated responsibilities.
+5. Extract substantial loop/callback/lambda bodies.
+6. Simplify state/type branching.
+7. Consider moving genuinely misplaced responsibility.
+8. Reassess the whole result.
+
+Do not automatically perform all eight steps.
+
+---
+
+## 7. Preserve behavior
+
+Unless the user explicitly requests behavior changes:
+
+> The refactor MUST preserve existing behavior.
+
+Preserve:
+
+- business rules,
+- ordering,
+- side effects,
+- state transitions,
+- exception behavior,
+- return behavior,
+- persistence behavior,
+- coroutine behavior,
+- dispatcher/threading behavior,
+- navigation,
+- API behavior.
+
+If a separate bug is discovered:
+
+1. identify it,
+2. do not silently fix it,
+3. keep behavior unchanged,
+4. mention the separate issue if relevant.
+
+---
+
+## 8. Inspect extracted code
+
+After extraction, inspect:
+
+- the original function,
+- every extracted function,
+- the caller/callee relationship,
+- whether complexity merely moved,
+- whether the new names communicate intent,
+- whether the code became harder to navigate.
+
+Do not consider the refactor successful simply because the original function became shorter.
+
+---
+
+## 9. Verify
+
+When static analysis is available:
+
+1. run relevant tests,
+2. run the relevant static-analysis check,
+3. inspect the resulting finding,
+4. confirm the targeted warning improved or disappeared.
+
+Do not claim a Cognitive Complexity warning is fixed without verification unless execution is genuinely unavailable.
+
+If verification cannot be performed, explicitly report the result as **unverified**.
+
+---
+
+# Output Contract
+
+When this skill is applied to a complexity finding or refactoring request, the final work report should contain, when applicable:
+
+```text
+## Complexity Analysis
+
+- Rule:
+- Analyzer:
+- Function:
+- Current score:
+- Threshold:
+- Main contributors:
+- Deepest nesting path:
+
+## Refactoring Decision
+
+- Strategy:
+- Responsibility boundary:
+- Why this boundary was chosen:
+- Behavior preserved:
+
+## Verification
+
+- Tests:
+- Static analysis:
+- Targeted warning:
+- Result:
+
+## Remaining Risk
+
+- Unverified behavior:
+- Remaining complexity:
+- Follow-up required:
+```
+
+Do not fabricate unavailable values.
+
+If a score or threshold is unknown, write:
+
+```text
+Unknown / not available
+```
+
+rather than guessing.
+
+---
+
+# Failure / Escalation
+
+Do not force a refactor when:
+
+- the complete target function cannot be inspected,
+- existing behavior cannot reasonably be established,
+- the requested numeric target is unknown and the user demands a specific score,
+- static analysis is unavailable when proof of resolution is explicitly required,
+- the only apparent solution is artificial function extraction,
+- complexity would merely move into another opaque helper,
+- the remaining complexity represents one coherent and understandable algorithm,
+- solving the issue requires a large architectural change outside the requested scope,
+- a behavior change is required but was not requested.
+
+When escalation is required, explain:
+
+1. what is blocking the refactor,
+2. what has been established,
+3. what can safely be changed,
+4. what additional information or decision is required.
+
+---
+
+# SonarSource Cognitive Complexity Context
+
+## Source
+
+Primary metric reference:
+
+> SonarSource, *Cognitive Complexity: A new way of measuring understandability*, Version 1.7, 29 August 2023.
+
+The source describes Cognitive Complexity as a metric intended to better reflect the relative difficulty of understanding and maintaining code than traditional mathematical control-flow measures.
+
+The source is language-neutral and uses object-oriented terminology such as "class" and "method" for convenience.
+
+---
+
+# Three Fundamental Rules
+
+SonarSource defines three basic rules.
+
+## Rule 1 — Ignore readable shorthand
+
+Structures that allow multiple statements to be expressed clearly in a concise form should not automatically be penalized.
+
+The purpose is to encourage readable language features rather than discourage them.
+
+Method calls are a major example.
+
+A well-named method can summarize a complex operation:
+
+```kotlin
+validateRequest()
+calculateTotals()
+persistOrder()
+```
+
+The call itself does not add Cognitive Complexity merely because it invokes another method.
+
+---
+
+## Rule 2 — Increment for breaks in linear flow
+
+Cognitive Complexity increases when code breaks the normal linear reading flow.
+
+Examples include:
+
+```text
+conditionals
+loops
+switch/when
+catch
+logical operator sequences
+recursion
+jumps
+```
+
+The reader must stop following a simple top-to-bottom path and reason about alternative paths.
+
+---
+
+## Rule 3 — Increment for nested flow-breaking structures
+
+Nesting increases mental effort.
+
+A sequence such as:
+
+```text
+if
+if
+loop
+```
+
+is harder to reason about when each structure is nested inside the previous one.
+
+The important principle is:
+
+> A deeply nested flow path can be significantly harder to understand than the same number of flow breaks arranged linearly.
+
+---
+
+# Increment Types
+
+The SonarSource model describes four categories.
+
+## Nesting
+
+Additional mental cost caused by nested control flow.
+
+## Structural
+
+A flow-breaking structure that also increases nesting.
+
+## Fundamental
+
+A flow-breaking structure that does not itself increase nesting.
+
+## Hybrid
+
+A structure that increases nesting but is not itself subject to a nesting increment.
+
+The categories help explain the calculation, but each applicable increment contributes to the final score.
+
+---
+
+# Cognitive Complexity Specification
+
+The following is the operational summary of the SonarSource specification.
+
+## B1 — Structures receiving an increment
+
+An increment applies to:
+
+- `if`
+- `else if`
+- `else`
+- ternary operator
+- `switch`
+- `for`
+- `foreach`
+- `while`
+- `do while`
+- `catch`
+- `goto LABEL`
+- labeled `break`
+- labeled `continue`
+- multi-level `break`
+- multi-level `continue`
+- sequences of binary logical operators
+- each method in a recursion cycle
+
+The exact syntax varies by language.
+
+---
+
+## B2 — Structures that increase nesting level
+
+The nesting level is increased by:
+
+- `if`
+- `else if`
+- `else`
+- ternary operator
+- `switch`
+- `for`
+- `foreach`
+- `while`
+- `do while`
+- `catch`
+- nested methods
+- method-like structures such as lambdas
+
+This distinction is critical.
+
+A structure can influence nesting even when it does not itself receive a structural increment.
+
+---
+
+## B3 — Structures receiving nesting increments
+
+The following structures receive a nesting increment according to their depth inside nesting structures:
+
+- `if`
+- ternary operator
+- `switch`
+- `for`
+- `foreach`
+- `while`
+- `do while`
+- `catch`
+
+This is why:
+
+```text
+if
+└── for
+    └── if
+```
+
+is substantially more expensive than three independent flow breaks.
+
+---
+
+# Important Exceptions and Compensating Principles
+
+## Method structure
+
+A normal method/function declaration does not itself add Cognitive Complexity.
+
+This supports extracting meaningful responsibilities.
+
+However:
+
+> Method extraction is useful only when it improves understandability.
+
+Do not split code into meaningless helpers merely to manipulate the score.
+
+---
+
+## `try`
+
+The SonarSource specification does not assign a structural increment to `try`.
+
+Do not remove `try` merely because it is visible in a complex function.
+
+---
+
+## `finally`
+
+The SonarSource specification does not assign a structural increment to `finally`.
+
+Do not restructure `finally` solely for metric reasons.
+
+---
+
+## `catch`
+
+Each `catch` clause contributes one structural increment, regardless of the number of exception types caught by that clause.
+
+A `catch` also participates in nesting behavior when nested inside applicable structures.
+
+---
+
+## `else if`
+
+`else if` receives a hybrid treatment.
+
+The mental cost of the additional condition is recognized, but it is not treated as an additional nesting level in the same way as a nested `if`.
+
+Do not mechanically rewrite every `else if`.
+
+---
+
+## `else`
+
+`else` receives a hybrid increment but does not receive the same nesting increment as a new nested `if`.
+
+Do not assume that every `else` creates another nesting level.
+
+---
+
+## `switch`
+
+SonarSource treats a switch and its cases as one structural increment.
+
+This differs from Cyclomatic Complexity's treatment.
+
+A clear `when`/`switch` over one discriminating value can therefore be preferable to an equivalent chain of unrelated comparisons.
+
+Do not replace a clear `when` simply to manipulate the metric.
+
+---
+
+# Logical Operator Sequences
+
+Cognitive Complexity does not increment once for every binary logical operator.
+
+Instead, it assesses sequences of binary logical operators.
+
+Examples:
+
+```kotlin
+a && b
+```
+
+```kotlin
+a && b && c && d
+```
+
+are treated as a sequence rather than four independent increments.
+
+More difficult expressions can contain multiple sequences:
+
+```kotlin
+a && b || c && d
+```
+
+The change between operator sequences increases cognitive effort.
+
+## Refactoring rule
+
+Do not mechanically extract every boolean expression.
+
+Instead ask:
+
+1. Is the expression understandable?
+2. Does it represent a domain decision?
+3. Are operators mixed?
+4. Would a named predicate explain the business meaning?
+5. Would extraction reduce mental effort or merely add indirection?
+
+Prefer:
+
+```kotlin
+if (canRefreshSession(session)) {
+    refreshSession()
 }
 ```
 
-Prefer this over:
+when `canRefreshSession` communicates a meaningful domain decision.
+
+---
+
+# Recursion
+
+Cognitive Complexity adds a fundamental increment for each method participating in a recursion cycle.
+
+This includes indirect recursion.
+
+Do not remove legitimate recursion merely because it contributes to the metric.
+
+If recursion is combined with substantial branching or nesting, evaluate whether the algorithm can be expressed more clearly.
+
+---
+
+# Jumps and Early Exits
+
+Cognitive Complexity assigns an increment to:
+
+- `goto`,
+- labeled `break`,
+- labeled `continue`,
+- other multi-level jumps.
+
+An ordinary early return does not receive the same increment.
+
+This is why guard clauses can be a useful readability technique.
+
+Prefer:
 
 ```kotlin
-fun processPayment(request: PaymentRequest) {
-    if (request.isValid) {
-        if (isSupported(request.type)) {
-            if (hasEnoughBalance(request)) {
-                executePayment(request)
+fun execute(request: Request) {
+    if (!request.isValid) return
+    if (!isSupported(request)) return
+
+    executeRequest(request)
+}
+```
+
+when the conditions are independent prerequisites.
+
+---
+
+# Nested Methods and Lambdas
+
+This is particularly important for Kotlin.
+
+SonarSource specifies that nested methods and method-like structures such as lambdas can increase nesting level even though the method-like structure itself does not receive a structural increment.
+
+Examples:
+
+```kotlin
+scope.launch {
+    ...
+}
+```
+
+```kotlin
+withContext(Dispatchers.IO) {
+    ...
+}
+```
+
+```kotlin
+items.forEach {
+    ...
+}
+```
+
+```kotlin
+callback {
+    ...
+}
+```
+
+Do not interpret this as "lambdas are bad".
+
+The rule is:
+
+> Substantial flow control inside nested method-like structures deserves special attention.
+
+---
+
+# Kotlin Async Example
+
+Consider:
+
+```kotlin
+fun sync() {
+    when (val decision = plan()) {
+        is Ready -> {
+            if (isValid()) {
+                scope.launch {
+                    try {
+                        val result = fetch()
+
+                        if (result.isEmpty()) {
+                            handleEmpty()
+                        } else {
+                            handleSuccess(result)
+                        }
+                    } catch (e: Exception) {
+                        handleError(e)
+                    }
+                }
             }
         }
+        is Skipped -> handleSkipped()
     }
 }
 ```
 
-The first version communicates the flow more directly and avoids unnecessary nesting.
+The important nesting path is approximately:
+
+```text
+when
+└── if
+    └── lambda
+        └── catch
+        └── if
+```
+
+Do not simply extract the `if`.
+
+Instead identify the responsibilities:
+
+```text
+decide whether synchronization should occur
+validate prerequisites
+start asynchronous work
+execute synchronization
+handle result
+handle failure
+finalize synchronization
+```
+
+A meaningful decomposition may become:
+
+```kotlin
+fun sync() {
+    when (val decision = plan()) {
+        is Ready -> startSync(decision)
+        is Skipped -> handleSkipped()
+    }
+}
+
+private fun startSync(decision: Ready) {
+    if (!isValid()) return
+
+    scope.launch {
+        executeSync(decision)
+    }
+}
+
+private suspend fun executeSync(decision: Ready) {
+    try {
+        val result = fetch()
+        handleResult(result)
+    } catch (e: Exception) {
+        handleError(e)
+    }
+}
+```
+
+The exact design depends on the surrounding code.
+
+The principle is:
+
+> Extract a coherent asynchronous responsibility, not arbitrary lines.
 
 ---
 
-# 2. Flatten nesting
+# Control-Flow Analysis Method
 
-Deep nesting is one of the primary causes of Cognitive Complexity.
+For a non-trivial function, use this process.
+
+## Pass 1 — Linear flow
+
+Read the function from top to bottom.
+
+Mark where the reader must stop and ask:
+
+```text
+Which branch?
+Which loop?
+Which state?
+Which exception?
+Which callback?
+Which nested context?
+```
+
+---
+
+## Pass 2 — Structural increments
+
+Mark:
+
+```text
+if
+else if
+else
+when
+loop
+catch
+logical sequence
+recursion
+jump
+```
+
+Do not assume all visible syntax contributes equally.
+
+---
+
+## Pass 3 — Nesting
+
+For each flow-breaking structure, determine its nesting depth.
+
+Example:
+
+```text
+if                  depth 0
+└── when             depth 1
+    └── launch       nesting context
+        └── if       deeper context
+            └── catch
+```
+
+---
+
+## Pass 4 — Responsibility
+
+Group statements into responsibilities.
+
+Example:
+
+```text
+A B C → validation
+D E    → data loading
+F G H  → transformation
+I J    → persistence
+K L    → error reporting
+```
+
+A group with a meaningful responsibility is a potential extraction boundary.
+
+---
+
+## Pass 5 — Refactoring
+
+Choose the smallest intervention that reduces mental effort.
+
+---
+
+## Pass 6 — Re-analysis
+
+After the refactor:
+
+- inspect the caller,
+- inspect extracted functions,
+- inspect nesting,
+- inspect responsibility boundaries,
+- compare static-analysis results.
+
+Do not stop after the first extraction.
+
+---
+
+# Refactoring Strategy
+
+## Strategy 1 — Flatten unnecessary nesting
 
 Prefer:
 
@@ -126,15 +993,20 @@ if (condition) {
 }
 ```
 
-When several conditions represent independent prerequisites, use guard clauses.
-
-Avoid nesting code merely because it is syntactically possible.
+Use this when conditions are independent prerequisites.
 
 ---
 
-# 3. Prefer guard clauses
+# Strategy 2 — Guard clauses
 
-Use early returns when they make the main execution path easier to understand.
+Good candidates:
+
+- invalid input,
+- null values,
+- unsupported states,
+- permissions,
+- preconditions,
+- expected failure states.
 
 Example:
 
@@ -148,762 +1020,594 @@ fun handleAction(action: Action) {
 }
 ```
 
-Instead of:
+Do not use guard clauses mechanically.
 
-```kotlin
-fun handleAction(action: Action) {
-    if (action is Action.Submit) {
-        if (state.isValid) {
-            if (!state.isLoading) {
-                submit()
-            }
-        }
-    }
-}
-```
-
-Guard clauses are especially useful for:
-
-- Validation.
-- Null checks.
-- State checks.
-- Permission checks.
-- Type checks.
-- Preconditions.
-- Error conditions.
-
-Do not introduce guard clauses when they make the business flow harder to understand.
+Ten unrelated early returns can be harder to understand than a small structured block.
 
 ---
 
-# 4. Keep functions focused
+# Strategy 3 — Separate responsibilities
 
-A function should have one clear responsibility.
-
-Be suspicious of functions that effectively do:
+Be suspicious of functions that do all of:
 
 ```text
-validate + transform + persist + notify + navigate
+validate
+transform
+persist
+notify
+navigate
+handle error
 ```
 
-Prefer separating meaningful responsibilities:
+Prefer meaningful boundaries:
 
 ```kotlin
 fun saveTransaction(transaction: Transaction) {
     validateTransaction(transaction)
+
     val data = transformTransaction(transaction)
+
     repository.save(data)
 }
 ```
 
-Further extraction is appropriate when the extracted operation has a meaningful name and responsibility.
-
-Do not split code solely to manipulate the complexity score.
+Extraction should represent a real responsibility.
 
 ---
 
-# 5. Name complex conditions
+# Strategy 4 — Extract meaningful conditions
 
-Complex boolean expressions should communicate intent.
+Prefer:
+
+```kotlin
+if (isCriticalCrash(crash)) {
+    flagAsCritical(crash)
+}
+```
+
+when the predicate expresses a meaningful domain decision.
 
 Avoid:
 
 ```kotlin
-if (
-    crash.packageName == targetPackage &&
-    (crash.exceptionType.contains("OutOfMemory") ||
-        crash.exceptionType.contains("StackOverflow")) &&
-    crash.timestamp > cutoff
-) {
-    flagAsCritical(crash)
+if (condition1()) {
+    ...
 }
+```
+
+when `condition1` exists only to hide one trivial expression.
+
+---
+
+# Strategy 5 — Extract substantial loops
+
+When a loop body contains multiple nested decisions, consider extracting the operation.
+
+Prefer:
+
+```kotlin
+while (reader.hasNext()) {
+    processEntry(reader.next())
+}
+```
+
+when `processEntry` represents a coherent responsibility.
+
+Do not extract a one-line operation merely because it is inside a loop.
+
+---
+
+# Strategy 6 — Extract substantial callback/async bodies
+
+This is especially valuable when the body contains:
+
+```text
+try/catch
+if/else
+when
+loops
+state transitions
+multiple side effects
 ```
 
 Prefer:
 
 ```kotlin
-if (isCriticalCrash(crash, targetPackage, cutoff)) {
-    flagAsCritical(crash)
+scope.launch {
+    executeOperation()
 }
 ```
 
-with:
+over placing the entire algorithm inside the lambda.
+
+---
+
+# Strategy 7 — Simplify state/type branching
+
+Use a clear `when` when a domain concept naturally represents mutually exclusive states.
+
+Example:
 
 ```kotlin
-private fun isCriticalCrash(
-    crash: CrashEntry,
-    targetPackage: String,
-    cutoff: Long,
-): Boolean {
-    val isTargetApp = crash.packageName == targetPackage
-    val isMemoryOrStackIssue =
-        crash.exceptionType.contains("OutOfMemory") ||
-            crash.exceptionType.contains("StackOverflow")
-    val isRecent = crash.timestamp > cutoff
-
-    return isTargetApp && isMemoryOrStackIssue && isRecent
+when (state) {
+    is UiState.Loading -> showLoading()
+    is UiState.Success -> showContent(state)
+    is UiState.Error -> showError(state)
 }
 ```
 
-Use names that explain **why** the condition matters, not merely **what** operators it contains.
+Do not replace a clear `when` with another structure merely to reduce a metric.
+
+---
+
+# Strategy 8 — Use sealed types only when the domain supports them
+
+If a concept naturally has a finite set of mutually exclusive states, a sealed hierarchy can improve readability.
+
+Do not introduce a sealed hierarchy solely because an `if/else if` chain has a high score.
+
+Architecture and domain modeling must have independent justification.
+
+---
+
+# Complexity Redistribution Test
+
+This test is mandatory after meaningful extraction.
+
+Ask:
+
+> Did complexity disappear, or did I only move it?
+
+Example:
+
+```text
+Before
+
+largeFunction()
+└── complex algorithm
+
+After
+
+largeFunction()
+└── complexHelper()
+```
+
+If `complexHelper()` is still difficult to understand, the refactor has not necessarily solved the problem.
+
+Inspect:
+
+```text
+original function
+extracted function
+new helper relationships
+```
+
+A good refactor distributes complexity according to responsibilities.
+
+A bad refactor distributes complexity according to line count.
+
+---
+
+# Abstraction Quality Test
+
+An extracted function should answer at least one of these:
+
+- Does it represent a meaningful responsibility?
+- Does it make the caller easier to scan?
+- Does it express useful domain language?
+- Does it isolate a substantial algorithm?
+- Does it create a useful test boundary?
+- Does it remove unnecessary nesting from the caller?
+
+If the answer is no, reconsider the extraction.
+
+---
+
+# Complexity vs Function Length
+
+Do not equate line count with Cognitive Complexity.
+
+A long function can be understandable when it is mostly linear:
+
+```kotlin
+val a = loadA()
+val b = loadB()
+val c = transform(a, b)
+save(c)
+notify(c)
+```
+
+A shorter function can be cognitively expensive:
+
+```kotlin
+if (...) {
+    when (...) {
+        ...
+    }
+}
+```
+
+Therefore:
+
+> Function length is a supporting signal, not the metric itself.
+
+---
+
+# Complexity vs Method Count
+
+Do not create many methods simply because method calls are not counted by Cognitive Complexity.
+
+This is metric gaming.
 
 Good:
 
 ```kotlin
-val isEligibleForRetry = ...
+validate()
+calculate()
+persist()
 ```
 
-Less useful:
+when each operation is meaningful.
+
+Bad:
 
 ```kotlin
-val condition = ...
+checkA()
+checkB()
+checkC()
+step1()
+step2()
+step3()
 ```
+
+when each helper merely hides one line of the original function.
 
 ---
 
-# 6. Avoid mixed boolean expressions when they obscure intent
+# Kotlin Scope Functions
 
-Be careful with expressions containing combinations of:
+Kotlin scope functions can improve or reduce readability depending on context.
 
-```kotlin
-&&
-||
-!
-```
-
-For example:
+Do not use:
 
 ```kotlin
-if (isActive && isAuthenticated || isAdmin && !isSuspended) {
-    ...
-}
+let
+run
+also
+apply
+with
 ```
 
-If the business meaning is not immediately obvious, extract meaningful predicates:
+merely to avoid visible `if` statements.
 
-```kotlin
-val canAccess = isRegularUserAllowed || isAdminAllowed
-
-if (canAccess) {
-    ...
-}
-```
-
-or:
-
-```kotlin
-if (canAccessFeature()) {
-    ...
-}
-```
-
-Do not combine conditions simply to reduce the number of branches.
-
-Clarity is more important than minimizing operators.
-
----
-
-# 7. Keep nesting shallow
-
-Avoid unnecessary nesting from:
-
-- `if`
-- `when`
-- loops
-- `try/catch`
-- lambdas
-- scope functions
-- callbacks
-- nested functions
-- nested collections operations
-
-Kotlin scope functions can hide complexity.
-
-For example, avoid turning straightforward logic into deeply nested:
+Avoid excessive nesting such as:
 
 ```kotlin
 user?.let {
     repository.find(it.id)?.let { result ->
         result.data?.let { data ->
             if (data.isValid) {
-                ...
+                process(data)
             }
         }
     }
 }
 ```
 
-Prefer a flatter structure where appropriate:
+A flatter form can be clearer:
 
 ```kotlin
 val user = user ?: return
 val result = repository.find(user.id) ?: return
 val data = result.data ?: return
+
 if (!data.isValid) return
 
 process(data)
 ```
 
-Use idiomatic Kotlin, but do not use scope functions merely because they reduce visible lines of code.
+Choose based on understandability, not line count.
 
 ---
 
-# 8. Use `when` appropriately
+# Boolean Conditions
 
-Prefer `when` when handling distinct states or types.
+When a condition is complex, first determine whether it contains:
 
-For example:
+- multiple concepts,
+- mixed operators,
+- precedence that requires careful reading,
+- domain rules,
+- repeated predicates.
+
+Then choose between:
 
 ```kotlin
-when (state) {
-    is UiState.Loading -> showLoading()
-    is UiState.Success -> showContent(state.data)
-    is UiState.Error -> showError(state.message)
+val canProcess = ...
+```
+
+or:
+
+```kotlin
+if (canProcess(request)) {
+    ...
 }
 ```
 
-A `when` over a sealed hierarchy can make state handling clearer than a long chain of type checks.
+or a structured sequence of guards.
 
-Avoid replacing every `if` with `when` simply to reduce a metric.
-
-Choose the construct that best communicates intent.
+Do not split a clear expression into multiple helpers simply because it contains operators.
 
 ---
 
-# 9. Prefer sealed types for mutually exclusive states
+# Exception Handling
 
-When a domain concept has a known set of states, consider a sealed hierarchy.
-
-Instead of:
-
-```kotlin
-if (state == 0) {
-    ...
-} else if (state == 1) {
-    ...
-} else if (state == 2) {
-    ...
-}
-```
+Keep `try` blocks focused when possible.
 
 Prefer:
 
 ```kotlin
-sealed interface PaymentState {
-    data object Idle : PaymentState
-    data object Processing : PaymentState
-    data class Failed(val message: String) : PaymentState
-    data object Success : PaymentState
-}
-```
-
-Then:
-
-```kotlin
-when (state) {
-    PaymentState.Idle -> ...
-    PaymentState.Processing -> ...
-    is PaymentState.Failed -> ...
-    PaymentState.Success -> ...
-}
-```
-
-Use this when the domain naturally represents mutually exclusive states.
-
-Do not introduce sealed classes only to reduce a complexity score.
-
----
-
-# 10. Extract loop bodies when appropriate
-
-Loops containing multiple levels of logic can quickly become difficult to read.
-
-Instead of:
-
-```kotlin
-while (reader.readLine().also { line = it } != null) {
-    val current = line ?: continue
-
-    if (current.contains("Process:")) {
-        if (buffer.isNotEmpty()) {
-            flushEntry(buffer.toString())
-            buffer.clear()
-        }
-    }
-
-    buffer.appendLine(current)
-}
-```
-
-Prefer:
-
-```kotlin
-while (reader.readLine().also { line = it } != null) {
-    val current = line ?: continue
-    handleLogLine(current)
-}
-```
-
-with meaningful extraction:
-
-```kotlin
-private fun handleLogLine(line: String) {
-    if (line.contains("Process:") && buffer.isNotEmpty()) {
-        flushEntry(buffer.toString())
-        buffer.clear()
-    }
-
-    buffer.appendLine(line)
-}
-```
-
-The loop should remain easy to scan.
-
----
-
-# 11. Avoid unnecessary nesting in exception handling
-
-Exception handling can become complex when business logic is deeply nested inside `try/catch`.
-
-Avoid:
-
-```kotlin
-try {
-    if (condition) {
-        if (otherCondition) {
-            repository.save()
-        }
-    }
-} catch (exception: Exception) {
-    ...
-}
-```
-
-Prefer:
-
-```kotlin
-if (!condition) return
-if (!otherCondition) return
+if (!isEligible()) return
 
 try {
     repository.save()
-} catch (exception: Exception) {
-    handleError(exception)
+} catch (e: Exception) {
+    handleFailure(e)
 }
 ```
 
-Keep the `try` block focused when possible.
+over:
 
-Do not catch broad exceptions unless the surrounding architecture requires it.
+```kotlin
+try {
+    if (isEligible()) {
+        if (isValid()) {
+            repository.save()
+        }
+    }
+} catch (e: Exception) {
+    handleFailure(e)
+}
+```
+
+Remember:
+
+```text
+try    -> no direct increment
+catch  -> structural increment
+finally -> no direct increment
+```
+
+Do not remove error handling solely for Cognitive Complexity.
 
 ---
 
-# 12. Do not hide complexity
+# New Code Contract
 
-Do not "solve" Cognitive Complexity by moving complicated code somewhere else without improving its readability.
+When writing a new function:
+
+## Required
+
+Before considering it complete:
+
+1. Identify its primary responsibility.
+2. Identify major decision points.
+3. Identify error paths.
+4. Identify async/callback boundaries.
+5. Avoid unnecessary nesting.
+6. Keep the primary path easy to scan.
+7. Name meaningful business decisions.
+8. Avoid artificial helper extraction.
+9. Review the function for likely complexity before finishing.
+
+## Review questions
+
+Ask:
+
+```text
+Can I understand the main path in one scan?
+
+Do I need to remember several surrounding conditions?
+
+Is substantial logic hidden inside a lambda?
+
+Are unrelated responsibilities mixed?
+
+Are boolean expressions expressing business rules clearly?
+
+Would a guard clause make an independent prerequisite clearer?
+
+Is a when/switch representing a natural state dispatch?
+
+Did I introduce unnecessary abstraction?
+```
+
+---
+
+# Existing Code Contract
+
+When fixing an existing warning:
+
+## Required
+
+1. Establish current behavior.
+2. Identify the exact warning.
+3. Map the control flow.
+4. Identify the deepest nesting.
+5. Identify responsibility boundaries.
+6. Refactor incrementally.
+7. Preserve behavior.
+8. Inspect extracted functions.
+9. Run relevant tests.
+10. Run static analysis when available.
+11. Confirm the targeted warning.
+12. Report verification accurately.
+
+---
+
+# Verification Contract
+
+Verification has three levels.
+
+## Level 1 — Static inspection
+
+Minimum when execution is unavailable:
+
+```text
+- inspect complete function
+- inspect extracted functions
+- reason about control flow
+- identify remaining complexity
+```
+
+Result:
+
+```text
+UNVERIFIED
+```
+
+Do not call this a successful static-analysis fix.
+
+---
+
+## Level 2 — Tests
+
+Run relevant tests when available.
+
+Report exact results.
+
+Example:
+
+```text
+Tests:
+./gradlew :core:test
+PASS
+```
+
+---
+
+## Level 3 — Static analysis
+
+When SonarQube, SonarLint, detekt, or equivalent tooling is available, rerun the relevant check.
+
+Report:
+
+```text
+Before:
+Cognitive Complexity = X
+
+Threshold:
+Y
+
+After:
+Cognitive Complexity = Z
+
+Result:
+Resolved
+```
+
+If only the warning disappeared without an exposed score:
+
+```text
+Targeted warning:
+Resolved
+
+Exact score:
+Not available
+```
+
+Never invent the score.
+
+---
+
+# Definition of Done
+
+A complexity refactor is complete only when all applicable conditions are satisfied:
+
+- [ ] Target function was fully understood.
+- [ ] Actual complexity contributors were identified.
+- [ ] Deepest nesting path was considered.
+- [ ] Responsibility boundaries were considered.
+- [ ] Unnecessary nesting was reduced.
+- [ ] Behavior was preserved.
+- [ ] Extracted code has meaningful responsibilities.
+- [ ] Complexity was not merely relocated.
+- [ ] Code was not artificially fragmented.
+- [ ] Relevant tests were run when available.
+- [ ] Static analysis was rerun when available.
+- [ ] The targeted warning was confirmed resolved/reduced, or explicitly marked unverified.
+- [ ] No unrelated refactor was introduced.
+
+---
+
+# Anti-Patterns
+
+## Metric gaming
+
+Do not optimize:
+
+```text
+score ↓
+```
+
+at the expense of:
+
+```text
+understandability ↓
+```
+
+---
+
+## Function splitting by line count
+
+Do not create helpers merely because a function is long.
+
+---
+
+## Function splitting by nesting syntax
+
+Do not extract every nested `if`.
+
+---
+
+## Helper explosion
 
 Avoid:
 
-```kotlin
-private fun a() = ...
-private fun b() = ...
-private fun c() = ...
-private fun d() = ...
+```text
+step1()
+step2()
+step3()
+step4()
+step5()
+step6()
 ```
 
-when every function contains one trivial line and the reader must jump between many locations.
-
-Extraction is useful when it gives the code a meaningful abstraction.
-
-The objective is:
-
-> Reduce mental effort, not merely reduce the number reported by a tool.
+when the helpers do not represent meaningful concepts.
 
 ---
 
-# 13. Avoid over-fragmentation
+## Hiding a complex algorithm
 
-Do not extract every `if`, expression, or line into a function.
-
-Bad:
-
-```kotlin
-if (isUserValid()) {
-    saveUser()
-}
-
-private fun isUserValid() = user != null
-```
-
-if the extraction adds no meaningful abstraction.
-
-Prefer:
-
-```kotlin
-if (user == null) return
-
-saveUser()
-```
-
-unless the condition has domain meaning that deserves a name.
-
----
-
-# New Code Mode
-
-When creating new classes or functions, apply the following process.
-
-## Step 1 — Identify responsibilities
-
-Before implementing the class/function, determine:
-
-- What is its primary responsibility?
-- What inputs does it receive?
-- What output does it produce?
-- What validation is required?
-- What states or branches exist?
-- Which operations can be separated?
-
-Avoid putting unrelated responsibilities into one function.
-
----
-
-## Step 2 — Design the happy path
-
-Make the primary execution path easy to identify.
-
-Prefer:
-
-```kotlin
-fun execute(request: Request) {
-    validate(request)
-    if (!isAllowed(request)) return
-
-    val result = process(request)
-
-    save(result)
-}
-```
-
-rather than nesting the entire business flow inside multiple conditions.
-
----
-
-## Step 3 — Handle exceptional paths early
-
-Handle:
-
-- Invalid input.
-- Null values.
-- Unsupported states.
-- Permission failures.
-- Error states.
-- Preconditions.
-
-as early as possible when doing so improves readability.
-
----
-
-## Step 4 — Review complexity before finishing
-
-Before considering new code complete, inspect for:
-
-- Deeply nested `if`.
-- Long `when`.
-- Multiple `else if`.
-- Mixed `&&` and `||`.
-- Nested loops.
-- Nested `try/catch`.
-- Nested lambdas.
-- Large functions.
-- Functions doing multiple responsibilities.
-- Repeated conditional logic.
-
-Refactor when complexity is unnecessarily high.
-
----
-
-# Existing Code / Refactoring Mode
-
-When modifying existing code, first understand the current behavior.
-
-## Step 1 — Identify the target
-
-Determine whether the issue is:
-
-- SonarQube Cognitive Complexity.
-- detekt `CognitiveComplexMethod`.
-- detekt `NestedBlockDepth`.
-- detekt `ComplexCondition`.
-- Another equivalent warning.
-- General readability or maintainability.
-
----
-
-## Step 2 — Preserve behavior
-
-Unless the user explicitly requests a behavior change:
-
-> **The refactor must preserve existing behavior.**
-
-Do not silently fix unrelated bugs.
-
-If a bug is discovered during refactoring:
-
-1. Mention it.
-2. Keep the behavior unchanged.
-3. Propose a separate fix if appropriate.
-
----
-
-## Step 3 — Establish a safety net
-
-If tests already exist:
-
-- Understand relevant tests.
-- Run or update them as necessary.
-
-If there are no tests and the function is sufficiently important or behavior-sensitive, consider creating a characterization test before structural changes.
-
-The test should capture existing behavior rather than redefine it.
-
----
-
-## Step 4 — Refactor incrementally
-
-Prefer small structural changes:
-
-1. Flatten nesting.
-2. Extract meaningful conditions.
-3. Extract meaningful responsibilities.
-4. Simplify type/state handling.
-5. Reassess the resulting structure.
-
-Avoid performing a large unrelated rewrite.
-
----
-
-## Step 5 — Verify
-
-After refactoring:
-
-- Run relevant unit tests.
-- Run relevant static analysis when available.
-- Re-check SonarQube/detekt findings.
-- Confirm that the intended complexity warning is reduced or resolved.
-
-Do not claim that a warning is fixed if it has not been verified.
-
----
-
-# Kotlin-Specific Guidance
-
-When working with Kotlin, pay particular attention to complexity hidden inside idiomatic constructs.
-
-## Prefer
-
-```kotlin
-val value = input ?: return
-```
-
-over unnecessary nesting:
-
-```kotlin
-if (input != null) {
-    ...
-}
-```
-
-when the surrounding logic supports an early return.
-
-Prefer:
-
-```kotlin
-when (result) {
-    is Success -> handleSuccess(result)
-    is Error -> handleError(result)
-}
-```
-
-when states are mutually exclusive.
-
-Prefer named functions for meaningful domain decisions:
-
-```kotlin
-if (shouldRefreshSession(session)) {
-    refreshSession()
-}
-```
-
-instead of embedding complicated business rules directly inside UI or domain code.
-
----
-
-# Android / Compose Guidance
-
-For Android and Jetpack Compose code, complexity can accumulate quickly in:
-
-- ViewModels.
-- UseCases.
-- Repositories.
-- Event handlers.
-- Navigation handlers.
-- Composable functions.
-- State reducers.
-- UI state mapping.
-- Permission handling.
-- WebView configuration.
-- Callback handlers.
-
-Do not allow a single function to simultaneously:
+Avoid:
 
 ```text
-read state
-validate state
-perform business logic
-transform data
-update UI state
-emit events
-navigate
-handle errors
+caller
+  ↓
+helper
+  ↓
+helper2
+  ↓
+helper3
 ```
 
-Split meaningful responsibilities.
-
-For Compose specifically, avoid a large composable containing all conditional UI logic.
-
-Prefer:
-
-```kotlin
-@Composable
-fun Screen(state: ScreenUiState) {
-    when (state) {
-        is ScreenUiState.Loading -> LoadingContent()
-        is ScreenUiState.Error -> ErrorContent(state)
-        is ScreenUiState.Content -> Content(state)
-    }
-}
-```
-
-and extract substantial UI sections into meaningful composables when that improves readability.
-
-Do not blindly extract every small UI element.
+when the reader must jump through several trivial layers to understand one operation.
 
 ---
 
-# SonarQube and detekt Awareness
+## Boolean compression
 
-This skill should consider both the human-readable structure and static-analysis rules.
-
-Relevant examples include:
-
-```text
-Cognitive Complexity
-CognitiveComplexMethod
-NestedBlockDepth
-ComplexCondition
-LongMethod
-LargeClass
-```
-
-The exact thresholds are project-dependent.
-
-Do not assume a universal threshold.
-
-If project configuration is available, follow the project's configured thresholds.
-
-If it is not available, focus on avoiding clearly excessive complexity rather than inventing a project-specific score.
-
----
-
-# Complexity Reduction Priority
-
-When reducing complexity, generally prefer the following order:
-
-1. **Flatten unnecessary nesting.**
-2. **Use guard clauses.**
-3. **Separate unrelated responsibilities.**
-4. **Name meaningful complex conditions.**
-5. **Simplify state/type branching.**
-6. **Extract meaningful loop or callback logic.**
-7. **Use sealed types or polymorphism when the domain supports it.**
-8. **Simplify expressions that obscure intent.**
-
-Do not start by aggressively extracting functions.
-
-First determine whether the underlying control flow can be made simpler.
-
----
-
-# Verification Checklist
-
-Before finishing work, ask:
-
-## For new code
-
-- Is the main execution path easy to identify?
-- Is nesting reasonably shallow?
-- Are guard clauses appropriate?
-- Are complex conditions named?
-- Does each function have a clear responsibility?
-- Are state branches represented clearly?
-- Is there unnecessary `if/else` nesting?
-- Is Kotlin scope-function nesting making the code harder to read?
-- Would SonarQube/detekt likely flag obvious complexity?
-- Did I introduce abstractions only where they improve readability?
-
-## For existing code
-
-- Did I understand the existing behavior first?
-- Did I preserve behavior?
-- Did I avoid unrelated changes?
-- Did I reduce unnecessary nesting?
-- Did I simplify complex conditions?
-- Did I extract meaningful responsibilities?
-- Did I avoid over-fragmentation?
-- Did I run relevant tests?
-- Did I re-run static analysis when available?
-- Did the targeted warning actually improve?
-
----
-
-# What NOT to do
-
-## Do not optimize only for the score
-
-Bad:
-
-```kotlin
-private fun condition1() = ...
-private fun condition2() = ...
-private fun condition3() = ...
-```
-
-when the extraction only exists to reduce Cognitive Complexity.
-
-The resulting code may technically have a lower score while being harder to navigate.
-
----
-
-## Do not change behavior silently
-
-A complexity refactor is not an excuse to change:
-
-- Business rules.
-- Error handling.
-- Ordering.
-- Side effects.
-- State transitions.
-- Navigation.
-- API behavior.
-
-Unless the user explicitly asks for those changes.
-
----
-
-## Do not combine unrelated conditions
-
-Do not transform readable logic into:
+Do not turn several understandable conditions into one dense expression:
 
 ```kotlin
 if (a && b || c && d || e && !f) {
@@ -911,135 +1615,225 @@ if (a && b || c && d || e && !f) {
 }
 ```
 
-just because it reduces visible branches.
-
-If the conditions represent different concepts, preserve those concepts.
+merely to reduce visible branching.
 
 ---
 
-## Do not overuse guard clauses
+## Scope-function abuse
 
-Guard clauses are useful, but ten sequential returns may be harder to understand than a small structured block.
+Do not turn linear logic into nested:
 
-Choose the structure that best communicates the business flow.
+```kotlin
+let { }
+run { }
+also { }
+apply { }
+```
 
----
-
-## Do not replace everything with `when`
-
-`when` is useful for state and type dispatch.
-
-It is not automatically better than `if`.
-
-Use the construct that makes the intent clearest.
+blocks merely because they are idiomatic Kotlin.
 
 ---
 
-## Do not introduce unnecessary architecture
+## Unnecessary architecture
 
-Do not create:
+Do not introduce:
 
-- New interfaces.
-- New classes.
-- New abstractions.
-- New layers.
-- New design patterns.
+- interfaces,
+- repositories,
+- use cases,
+- managers,
+- coordinators,
+- new modules,
+- design patterns,
 
 only to reduce Cognitive Complexity.
 
-Architecture should solve an actual structural problem.
+If architecture must change, the reason must be structural and independently defensible.
 
 ---
 
-## Do not hide complexity behind functions
+## Silent behavior change
 
-This is not sufficient:
-
-```kotlin
-fun process() {
-    step1()
-    step2()
-    step3()
-}
-```
-
-if each extracted function merely contains another large, difficult-to-understand block.
-
-Complexity should be **distributed according to responsibility**, not merely moved.
+Do not change behavior while claiming a refactor.
 
 ---
 
-## Do not refactor unrelated code
+## Unverified success
 
-When fixing a complexity warning, keep the change focused.
+Do not say:
 
-Avoid mixing:
+> "SonarQube issue is fixed"
 
-- Formatting changes.
-- Naming refactors.
-- Architecture changes.
-- Dependency upgrades.
-- Bug fixes.
-- Feature changes.
-
-unless they are necessary for the requested work.
+unless the relevant analysis confirms it.
 
 ---
 
-# Definition of Done
+# Decision Matrix
 
-Code is considered complete when:
+Use this matrix before choosing a refactoring.
 
-### New code
-
-- The implementation is designed with low Cognitive Complexity from the beginning.
-- Control flow is easy to follow.
-- Nesting is kept shallow.
-- Responsibilities are appropriately separated.
-- Complex conditions communicate their intent.
-- No unnecessary abstraction was introduced.
-- The code is unlikely to produce avoidable SonarQube/detekt complexity warnings.
-
-### Existing code
-
-- The original behavior is preserved unless change was explicitly requested.
-- The complexity problem has been addressed structurally.
-- The code remains readable.
-- The code is not over-fragmented.
-- Relevant tests pass.
-- Static analysis is re-run when available.
-- The targeted warning is confirmed to be resolved or reduced.
+| Problem | Preferred response |
+|---|---|
+| Independent nested prerequisites | Guard clauses |
+| Deep nested branch | Flatten control flow |
+| Complex business predicate | Name meaningful predicate |
+| Large coherent algorithm | Extract meaningful operation |
+| Async lambda with substantial control flow | Extract async responsibility |
+| Complex loop body | Extract meaningful loop operation |
+| Mutually exclusive domain states | Clear `when` / state model |
+| Mixed boolean operators | Clarify domain conditions |
+| Complexity only moved to helper | Continue analysis |
+| Helper has no meaningful responsibility | Do not extract |
+| Warning requires architectural redesign | Escalate / reconsider scope |
+| Static analysis unavailable | Mark result unverified |
 
 ---
 
-# Guiding Principle
+# Example Analysis Template
 
-Always optimize for this hierarchy:
+For a warning on:
 
 ```text
-Human readability
-       ↓
-Clear responsibilities
-       ↓
+Function: syncGitCommits
+Rule: Cognitive Complexity
+```
+
+produce an analysis such as:
+
+```text
+Current structure:
+
+syncGitCommits
+└── when
+    └── Ready
+        └── if
+            └── launch
+                └── try
+                    └── if
+                    └── catch
+
+Primary issue:
+
+The problem is not simply the number of conditions.
+The main issue is the depth of the control-flow path combined with
+substantial asynchronous work inside a lambda.
+
+Responsibility boundaries:
+
+1. Decide whether sync should occur.
+2. Validate repository availability.
+3. Prepare synchronization state.
+4. Execute synchronization.
+5. Handle result.
+6. Handle failure.
+7. Finalize synchronization state.
+
+Preferred direction:
+
+Keep the top-level function focused on orchestration.
+Extract the substantial asynchronous synchronization responsibility.
+Do not extract arbitrary individual statements.
+```
+
+Then verify the result.
+
+---
+
+# SonarSource Model: Practical Reference
+
+Use this table as a quick reference.
+
+| Construct | Structural increment | Nesting behavior |
+|---|---:|---|
+| `if` | Yes | Increases nesting |
+| `else if` | Hybrid | Increases nesting level but no separate nesting increment |
+| `else` | Hybrid | Increases nesting level but no separate nesting increment |
+| ternary | Yes | Increases nesting |
+| `switch` / equivalent | Yes | Increases nesting |
+| `for` / `foreach` | Yes | Increases nesting |
+| `while` / `do while` | Yes | Increases nesting |
+| `catch` | Yes | Increases nesting |
+| `try` | No | No |
+| `finally` | No | No |
+| method call | No | No |
+| nested method/lambda | No structural increment | Increases nesting level |
+| binary logical-operator sequence | Yes | Depends on surrounding nesting |
+| recursion cycle method | Yes | Fundamental increment |
+| labeled/multi-level jump | Yes | Fundamental increment |
+| ordinary early `return` | No equivalent jump increment | No |
+
+This table is an operational summary of the SonarSource specification. Language-specific analyzers may have implementation details that differ; when an actual analyzer result is available, the analyzer result is authoritative for the final score.
+
+---
+
+# Important Interpretation Rule
+
+Cognitive Complexity is a measure of understandability, not a universal definition of "bad code".
+
+Therefore:
+
+```text
+High score
+    ↓
+Investigate
+```
+
+not:
+
+```text
+High score
+    ↓
+Automatically split function
+```
+
+Likewise:
+
+```text
+Low score
+    ↓
+Automatically good code
+```
+
+is not valid.
+
+The agent must use the metric together with actual code structure and responsibility boundaries.
+
+---
+
+# Final Principle
+
+Optimize in this order:
+
+```text
+Human understandability
+        ↓
+Clear responsibility boundaries
+        ↓
 Simple control flow
-       ↓
-Maintainability
-       ↓
+        ↓
+Shallow unnecessary nesting
+        ↓
+Maintainable structure
+        ↓
 Static-analysis compliance
 ```
 
-Never reverse the hierarchy into:
+Never reverse this into:
 
 ```text
-SonarQube score
-       ↓
+SonarQube number
+        ↓
 Artificial extraction
-       ↓
+        ↓
 More indirection
-       ↓
-Harder code to understand
+        ↓
+Harder code
 ```
 
-The purpose of this skill is not merely to make the complexity number smaller.
+The correct outcome is not:
 
-The purpose is to **prevent complex code from being created and to make existing complex code simpler without sacrificing readability or behavior.**
+> "The function has a lower Cognitive Complexity score."
+
+The correct outcome is:
+
+> **"The code requires less mental effort to understand, the responsibilities are clearer, behavior is preserved, and the static-analysis result confirms the intended improvement."**
